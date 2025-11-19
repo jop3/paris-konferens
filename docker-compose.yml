@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Main application
+  app:
+    build: .
+    container_name: disinfo_monitor
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    restart: unless-stopped
+    command: python main.py
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    container_name: disinfo_postgres
+    environment:
+      POSTGRES_DB: disinfo_monitor
+      POSTGRES_USER: disinfo_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  # Redis cache
+  redis:
+    image: redis:7-alpine
+    container_name: disinfo_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # Optional: Flower for Celery monitoring
+  # flower:
+  #   build: .
+  #   container_name: disinfo_flower
+  #   command: celery -A tasks flower
+  #   ports:
+  #     - "5555:5555"
+  #   depends_on:
+  #     - redis
+
+volumes:
+  postgres_data:
+  redis_data:
