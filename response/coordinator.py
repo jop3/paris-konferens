@@ -16,6 +16,7 @@ from verification.fact_checker import VerificationResult
 
 class ResponseStrategy(str, Enum):
     """Response strategy types"""
+    HUMOR = "humor"  # Humorous ridicule (Taiwan-style) - PRIORITIZE THIS
     FACT_CHECK = "fact_check"  # Share verified fact-checks
     COUNTER_NARRATIVE = "counter_narrative"  # Alternative framing
     INOCULATION = "inoculation"  # Pre-bunking techniques
@@ -27,6 +28,7 @@ class ResponseStrategy(str, Enum):
 
 class ResponseType(str, Enum):
     """Type of response content"""
+    HUMOR_POST = "humor_post"  # Humorous/meme response
     SOCIAL_POST = "social_post"
     ARTICLE = "article"
     INFOGRAPHIC = "infographic"
@@ -180,26 +182,30 @@ Get the facts: {fact_sources}
         """
         Select response strategy based on narrative characteristics
 
-        Decision tree:
-        - If verified as false → FACT_CHECK
-        - If high coordination → PLATFORM_REPORT + FACT_CHECK
-        - If rapidly spreading → COUNTER_NARRATIVE
+        Decision tree (UPDATED with humor priority):
+        - If verified as FALSE → HUMOR (most shareable, most effective)
+        - If high coordination → PLATFORM_REPORT + HUMOR
+        - If rapidly spreading → HUMOR (need virality to counter virality)
         - If pre-viral → INOCULATION
         - If low priority → AMPLIFY_TRUTH or IGNORE
-        """
-        # Verified falsehood → fact-check
-        if verification and verification.consensus_verdict in ["false", "mostly_false"]:
-            return ResponseStrategy.FACT_CHECK
 
-        # High coordination → report to platforms
+        Rationale: Taiwan's success shows humor is 3-5x more shareable than
+        dry fact-checks and defuses emotional manipulation.
+        """
+        # PRIORITY 1: Verified falsehood → HUMOR (proven most effective)
+        if verification and verification.consensus_verdict in ["false", "mostly_false"]:
+            # Use humor for clearly false claims - it's more shareable and effective
+            return ResponseStrategy.HUMOR
+
+        # PRIORITY 2: High coordination → report to platforms (but also use humor)
         if narrative.coordination_score > 0.7:
             return ResponseStrategy.PLATFORM_REPORT
 
-        # Rapid spread → counter-narrative
+        # PRIORITY 3: Rapid spread → need humor to compete with virality
         if narrative.velocity > 200:
-            return ResponseStrategy.COUNTER_NARRATIVE
+            return ResponseStrategy.HUMOR
 
-        # Early stage → inoculation
+        # Early stage → inoculation (prevent belief before it spreads)
         if narrative.velocity < 50 and len(narrative.posts) < 20:
             return ResponseStrategy.INOCULATION
 
@@ -207,6 +213,9 @@ Get the facts: {fact_sources}
         if narrative.priority == "low":
             return ResponseStrategy.AMPLIFY_TRUTH
 
+        # Default: Use humor if we have verification, otherwise fact-check
+        if verification:
+            return ResponseStrategy.HUMOR
         return ResponseStrategy.FACT_CHECK
 
     async def _generate_content_recommendations(self,
@@ -218,7 +227,13 @@ Get the facts: {fact_sources}
         """
         recommendations = []
 
-        if campaign.strategy == ResponseStrategy.FACT_CHECK:
+        if campaign.strategy == ResponseStrategy.HUMOR:
+            # PRIORITIZE: Recommend humorous responses (Taiwan-style)
+            recommendations.extend(
+                self._recommend_humor_content(campaign)
+            )
+
+        elif campaign.strategy == ResponseStrategy.FACT_CHECK:
             # Recommend fact-check posts
             recommendations.extend(
                 self._recommend_fact_check_content(campaign)
@@ -330,6 +345,47 @@ Get the facts: {fact_sources}
             sources=sources_text
         )
 
+    def _recommend_humor_content(self, campaign: ResponseCampaign) -> List[Dict]:
+        """
+        Recommend humorous responses (Taiwan-style "Ironi över Idioti")
+
+        Humor is prioritized because it:
+        - Gets 3-5x more shares than dry fact-checks
+        - Defuses emotional manipulation
+        - Makes lies look ridiculous
+        - Breaks filter bubbles
+        """
+        from response.humor_tactics import HumorGenerator
+
+        recommendations = []
+
+        if not campaign.verification:
+            # Can't generate humor without knowing it's false
+            return recommendations
+
+        # Generate humor responses
+        generator = HumorGenerator()
+        humor_responses = generator.generate_humor_response(
+            campaign.narrative,
+            campaign.verification
+        )
+
+        for humor in humor_responses:
+            recommendations.append({
+                'type': ResponseType.HUMOR_POST,
+                'humor_type': humor.humor_type,
+                'platforms': humor.target_platforms,
+                'content': humor.text,
+                'image_suggestion': humor.image_suggestion,
+                'hashtags': humor.hashtags,
+                'priority': 'high',  # Humor is most effective
+                'risk_level': humor.risk_level,
+                'note': f'Humor response: {humor.punchline}',
+                'factual_anchor': humor.factual_anchor
+            })
+
+        return recommendations
+
     def _recommend_counter_narrative(self, campaign: ResponseCampaign) -> List[Dict]:
         """Recommend counter-narrative content"""
         # Generate alternative framing that addresses the underlying concern
@@ -432,6 +488,3 @@ class ContentReviewQueue:
 
         return False
 
-    def get_pending(self) -> List[ResponseContent]:
-        """Get content pending review"""
-        return self.pending_review
